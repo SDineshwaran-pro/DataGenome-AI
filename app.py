@@ -1,521 +1,392 @@
+"""
+DataGenome AI — Full RAG Chatbot (No API Key Required)
+BM25 retrieval + intelligent answer synthesis
+Run: streamlit run app.py
+"""
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from data import CLINICAL_TABLES, GLOSSARY, MOCK_DQ_ISSUES
+from rag_engine import ClinicalRAG
+from answer_engine import generate_answer
 
 st.set_page_config(
     page_title="DataGenome AI",
     page_icon="🧬",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
-# Custom CSS
+# ─────────────────────────── CSS ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main-header { 
-        background: linear-gradient(135deg, #0f172a 0%, #134e4a 100%);
-        color: white; padding: 1.2rem 1.5rem; border-radius: 12px;
-        margin-bottom: 1.2rem;
-    }
-    .main-header h1 { margin: 0; font-size: 1.6rem; font-weight: 800; }
-    .main-header p { margin: 0.2rem 0 0; opacity: 0.7; font-size: 0.85rem; }
-    .kpi-card {
-        background: #f8fafc; border: 1px solid #e2e8f0;
-        border-radius: 10px; padding: 1rem; text-align: center;
-    }
-    .kpi-number { font-size: 1.8rem; font-weight: 900; color: #0f172a; font-family: monospace; }
-    .kpi-label { font-size: 0.75rem; color: #64748b; margin-top: 0.2rem; }
-    .tag-sdtm { background: #ccfbf1; color: #0f766e; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; }
-    .tag-adam { background: #dbeafe; color: #1d4ed8; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; }
-    .badge-critical { background: #fee2e2; color: #dc2626; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
-    .badge-warning { background: #fef9c3; color: #ca8a04; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
-    .badge-info { background: #dbeafe; color: #2563eb; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
-    .chat-user { background: #0d9488; color: white; padding: 0.7rem 1rem; border-radius: 12px 12px 2px 12px; margin: 0.4rem 0; }
-    .chat-ai { background: #f1f5f9; color: #1e293b; padding: 0.7rem 1rem; border-radius: 2px 12px 12px 12px; margin: 0.4rem 0; border-left: 3px solid #0d9488; }
-    div[data-testid="stSidebar"] { background: #0f172a !important; }
-    div[data-testid="stSidebar"] * { color: #cbd5e1 !important; }
-    div[data-testid="stSidebar"] .stRadio label { color: #cbd5e1 !important; }
+  #MainMenu, footer, header { visibility: hidden; }
+  .block-container { padding: 0 !important; max-width: 100% !important; }
+
+  /* Top bar */
+  .topbar {
+    background: linear-gradient(135deg, #0f172a 0%, #134e4a 100%);
+    color: white; padding: 0.55rem 1.25rem;
+    display: flex; align-items: center; gap: 0.65rem;
+  }
+  .topbar-title { font-size: 1.05rem; font-weight: 800; letter-spacing: -0.3px; }
+  .topbar-sub   { font-size: 0.7rem; opacity: 0.45; margin-left: 2px; }
+  .topbar-right { margin-left: auto; font-size: 0.7rem; opacity: 0.55;
+                  display: flex; align-items: center; gap: 5px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%;
+         background: #22c55e; display: inline-block; }
+
+  /* Chat bubbles */
+  .bubble-user {
+    background: #0d9488; color: white;
+    padding: 0.58rem 0.95rem; border-radius: 14px 14px 3px 14px;
+    margin: 0.4rem 0 0.4rem auto; max-width: 78%; width: fit-content;
+    font-size: 0.87rem; line-height: 1.5; display: block;
+  }
+  .bubble-ai {
+    background: #ffffff; color: #1e293b;
+    border: 1px solid #e2e8f0; border-left: 3px solid #0d9488;
+    padding: 0.75rem 1rem; border-radius: 3px 14px 14px 14px;
+    margin: 0.4rem 0; max-width: 96%; font-size: 0.86rem;
+    line-height: 1.65; display: block;
+  }
+  .bubble-ai strong { color: #0f172a; }
+  .bubble-ai code {
+    background: #f1f5f9; color: #0f766e;
+    padding: 1px 5px; border-radius: 4px; font-size: 0.78rem;
+  }
+  .bubble-ai pre {
+    background: #f1f5f9; padding: 6px 10px;
+    border-radius: 6px; font-size: 0.74rem;
+    overflow-x: auto; margin-top: 5px;
+  }
+
+  /* Tags */
+  .tag { display:inline-block; padding:1px 7px; border-radius:20px;
+         font-size:0.68rem; font-weight:700; margin:1px; }
+  .ts  { background:#ccfbf1; color:#0f766e; }
+  .ta  { background:#dbeafe; color:#1d4ed8; }
+  .tc  { background:#fee2e2; color:#dc2626; }
+  .tw  { background:#fef9c3; color:#ca8a04; }
+  .ti  { background:#dbeafe; color:#2563eb; }
+  .tok { background:#dcfce7; color:#15803d; }
+
+  /* Stat cards */
+  .sc-row { display:flex; gap:5px; flex-wrap:wrap; margin:6px 0; }
+  .sc { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+        padding:5px 10px; min-width:76px; }
+  .sc-l { font-size:0.64rem; color:#64748b; margin-bottom:1px; }
+  .sc-v { font-size:0.95rem; font-weight:700; color:#0f172a; }
+
+  /* Mini bar */
+  .bar-row { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  .bar-bg  { flex:1; background:#f1f5f9; border-radius:4px;
+             height:11px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:4px; }
+
+  /* Sources strip */
+  .sources {
+    background: #f8fafc; border: 1px solid #e9eef4;
+    border-radius: 0 0 8px 8px; padding: 5px 10px;
+    font-size: 0.7rem; color: #94a3b8;
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  }
+  .src-chip {
+    background: #e0f2fe; color: #0369a1;
+    border-radius: 10px; padding: 1px 7px;
+    font-size: 0.67rem; font-weight: 600;
+  }
+  .src-chip.dq         { background:#fee2e2; color:#dc2626; }
+  .src-chip.schema     { background:#ccfbf1; color:#0f766e; }
+  .src-chip.column     { background:#ccfbf1; color:#0f766e; }
+  .src-chip.glossary   { background:#fef9c3; color:#854d0e; }
+  .src-chip.er         { background:#dbeafe; color:#1d4ed8; }
+  .src-chip.regulatory { background:#f3e8ff; color:#7c3aed; }
+  .src-chip.ae         { background:#fee2e2; color:#c2410c; }
+  .src-chip.analysis   { background:#dcfce7; color:#15803d; }
+  .src-chip.study      { background:#f0f9ff; color:#0369a1; }
+
+  /* Action buttons */
+  div[data-testid="stButton"] > button {
+    width: 100%; text-align: left !important;
+    justify-content: flex-start !important;
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    color: #334155 !important;
+    font-size: 0.8rem !important;
+    padding: 0.4rem 0.75rem !important;
+    transition: all 0.12s;
+  }
+  div[data-testid="stButton"] > button:hover {
+    border-color: #0d9488 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Send button */
+  .send-wrap div[data-testid="stButton"] > button {
+    background: #0d9488 !important;
+    color: white !important; border: none !important;
+    font-weight: 700 !important; border-radius: 10px !important;
+    justify-content: center !important; font-size: 0.88rem !important;
+  }
+  .send-wrap div[data-testid="stButton"] > button:hover {
+    background: #0f766e !important;
+  }
+
+  /* Quick chips */
+  .chip-wrap div[data-testid="stButton"] > button {
+    border-radius: 20px !important;
+    font-size: 0.71rem !important;
+    padding: 0.18rem 0.7rem !important;
+    background: #f1f5f9 !important;
+    color: #475569 !important;
+    width: auto !important;
+  }
+  .chip-wrap div[data-testid="stButton"] > button:hover {
+    background: #e0f2fe !important;
+    border-color: #7dd3fc !important;
+  }
+
+  /* Text input */
+  .stTextArea textarea {
+    border-radius: 10px !important;
+    border: 1.5px solid #e2e8f0 !important;
+    font-size: 0.87rem !important;
+    resize: none !important;
+    background: #fafafa !important;
+  }
+  .stTextArea textarea:focus {
+    border-color: #0d9488 !important;
+    background: #fff !important;
+  }
+
+  /* RAG badge */
+  .rag-bar {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    padding: 5px 1rem; background: #f8fafc;
+    border-bottom: 1px solid #e9eef4;
+    align-items: center;
+  }
+  .rag-label { font-size:0.67rem; color:#94a3b8; font-weight:700;
+               text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
+
+  /* Welcome card */
+  .welcome {
+    text-align: center; padding: 1.5rem 1rem;
+    color: #64748b;
+  }
+  .welcome-title { font-size:1rem; font-weight:800; color:#0f172a; margin-bottom:5px; }
+  .welcome-sub   { font-size:0.82rem; line-height:1.6; max-width:520px; margin:0 auto 1rem; }
+  .tip-chip {
+    display:inline-block; background:#f1f5f9; border-radius:8px;
+    padding:4px 10px; font-size:0.75rem; margin:3px;
+    color:#475569; border:1px solid #e2e8f0;
+  }
+
+  /* Chat scroll area */
+  .chat-area { padding: 0.5rem 1.25rem 0.3rem; }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #f8fafc; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 </style>
 """, unsafe_allow_html=True)
 
-# Header
-st.markdown("""
-<div class="main-header">
-  <h1>🧬 DataGenome AI</h1>
-  <p>Conversational Clinical Data Intelligence · CDISC SDTM & ADaM · Zero SQL Required</p>
+
+# ─────────────────────────── Init ────────────────────────────────────────────
+@st.cache_resource(show_spinner="🧬 Building RAG knowledge index…")
+def load_rag():
+    return ClinicalRAG()
+
+rag   = load_rag()
+stats = rag.stats()
+
+CHIPS = [
+    ("🛡️ DQ Audit",       "Show all data quality issues and remediations"),
+    ("📋 SDTM Tables",    "List all SDTM and ADaM tables"),
+    ("🔗 ER Diagram",     "Explain ER relationships between all tables"),
+    ("📖 Dictionary",     "Show full data dictionary for all columns"),
+    ("📚 Glossary",       "List all CDISC and GCP glossary terms"),
+    ("📊 Dashboard",      "Show DQ completeness metrics and error trends"),
+    ("📜 Reg Report",     "Show regulatory submission status and dossier"),
+    ("⚠️ AE Summary",    "Summarise AE domain data and severity breakdown"),
+]
+
+# Session state
+if "messages"  not in st.session_state: st.session_state.messages  = []
+if "pending"   not in st.session_state: st.session_state.pending   = ""
+if "input_key" not in st.session_state: st.session_state.input_key = 0
+
+
+# ─────────────────────────── Submit logic ────────────────────────────────────
+def submit(q: str):
+    q = q.strip()
+    if not q:
+        return
+    # Retrieve
+    chunks = rag.retrieve(q, top_k=6)
+    # Generate answer
+    html, btns = generate_answer(q, chunks)
+    # Store
+    st.session_state.messages.append({"role": "user",  "text": q})
+    st.session_state.messages.append({
+        "role": "ai", "html": html, "btns": btns,
+        "sources": chunks,
+    })
+    st.session_state.pending   = ""
+    st.session_state.input_key += 1   # clears textarea
+
+
+# Handle pending (chip/button clicks submitted before render)
+if st.session_state.pending:
+    submit(st.session_state.pending)
+
+
+# ─────────────────────────── Top bar ─────────────────────────────────────────
+st.markdown(f"""
+<div class="topbar">
+  <span style="font-size:1.25rem">🧬</span>
+  <span class="topbar-title">DataGenome AI</span>
+  <span class="topbar-sub">RAG · CDISC Clinical Intelligence · No API Key Required</span>
+  <div class="topbar-right">
+    <span class="dot"></span>
+    STUDY-2026-FIBER &nbsp;·&nbsp; {stats['total']} chunks
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar navigation
-with st.sidebar:
-    st.markdown("## 🧬 DataGenome AI")
-    st.markdown("---")
-    view = st.radio(
-        "Navigate",
-        options=[
-            "💬 AI Chatbot",
-            "📋 Schema Explorer",
-            "🔗 ER Diagram",
-            "🛡️ DQ Audit",
-            "📊 DQ Dashboard",
-            "📖 Data Dictionary",
-            "📜 Regulatory Report",
-            "📚 GCP Glossary",
-        ],
-        label_visibility="collapsed"
-    )
-    st.markdown("---")
-    st.markdown("**Study:** STUDY-2026-FIBER")
-    st.markdown("**Records:** 10,240 total")
-    st.markdown("**Tables:** 5 (SDTM + ADaM)")
-    st.caption("Free prototype · No API key required")
+# ─────────────────────────── RAG index bar ───────────────────────────────────
+chip_html = "".join(
+    f'<span class="src-chip {cat}">{cat} · {n}</span>'
+    for cat, n in sorted(stats["by_category"].items())
+)
+st.markdown(
+    f'<div class="rag-bar"><span class="rag-label">RAG Index</span>'
+    f'{chip_html}'
+    f'<span style="margin-left:auto;font-size:0.67rem;color:#cbd5e1">'
+    f'BM25 Okapi · Free · Local · No API key</span></div>',
+    unsafe_allow_html=True
+)
 
-# ─── CHATBOT ───────────────────────────────────────────────────────────────────
-if view == "💬 AI Chatbot":
-    st.subheader("💬 Clinical Intelligence Assistant")
-    st.caption("Ask questions about your clinical database in plain English.")
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Welcome to DataGenome AI! I'm your Conversational Clinical Data Intelligence Agent.\n\nNo SQL knowledge needed. Ask me about schemas, adverse events, data quality issues, ER relationships, or regulatory dossier generation.\n\nTry: *\"Show me adverse event severity breakdown\"* or *\"What are the DQ issues in the DM table?\"*"}
-        ]
-
-    # Quick action chips
-    st.markdown("**Quick Actions:**")
-    cols = st.columns(4)
-    quick_actions = [
-        "Show DQ audit issues",
-        "What tables are in SDTM?",
-        "Explain USUBJID field",
-        "Show ER relationships",
-    ]
-    for i, action in enumerate(quick_actions):
-        if cols[i].button(action, use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": action})
+# ─────────────────────────── Quick chips ─────────────────────────────────────
+chip_cols = st.columns(len(CHIPS))
+for col, (label, query) in zip(chip_cols, CHIPS):
+    with col:
+        st.markdown('<div class="chip-wrap">', unsafe_allow_html=True)
+        if st.button(label, key=f"chip_{label}"):
+            st.session_state.pending = query
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # Chat history
-    for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            st.markdown(f'<div class="chat-user">👤 {msg["content"]}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="chat-ai">🧬 {msg["content"]}</div>', unsafe_allow_html=True)
+st.markdown("<hr style='margin:0;border-color:#e9eef4'>", unsafe_allow_html=True)
 
-    # Generate rule-based response (no API needed)
-    last = st.session_state.messages[-1] if st.session_state.messages else None
-    if last and last["role"] == "user":
-        q = last["content"].lower()
-        if any(w in q for w in ["dq", "quality", "audit", "issue", "null", "missing", "anomaly"]):
-            response = (
-                "📊 **DQ Audit Summary**\n\n"
-                "I found **6 active constraint exceptions** in your clinical database:\n\n"
-                "• **DM.ARMCD** — 7 subjects with blank arm assignment (Critical)\n"
-                "• **VS.VSSTRESN** — 3 negative systolic BP records (Critical)\n"
-                "• **AE.AESTDTC** — 2 events with future dates beyond 2026 (Warning)\n"
-                "• **LB.LBSTRESN** — 12 out-of-range lab values (Warning)\n\n"
-                "Recommended: navigate to 🛡️ DQ Audit for full remediation guidance."
-            )
-        elif any(w in q for w in ["table", "schema", "sdtm", "adam", "structure"]):
-            response = (
-                "📋 **Connected Clinical Tables**\n\n"
-                "Your study contains **5 CDISC-compliant tables**:\n\n"
-                "• **DM** (Demographics) — 250 rows · SDTM\n"
-                "• **AE** (Adverse Events) — 1,140 rows · SDTM\n"
-                "• **VS** (Vital Signs) — 3,200 rows · SDTM\n"
-                "• **LB** (Laboratory Results) — 5,400 rows · SDTM\n"
-                "• **ADSL** (Subject-Level Analysis) — 250 rows · ADaM\n\n"
-                "Navigate to 📋 Schema Explorer to inspect columns and sample data."
-            )
-        elif any(w in q for w in ["er", "relation", "foreign", "link", "connect"]):
-            response = (
-                "🔗 **ER Relationship Summary**\n\n"
-                "All 5 tables share **USUBJID** (Unique Subject Identifier) as the primary link:\n\n"
-                "• **DM → AE**: 1:many via USUBJID + STUDYID\n"
-                "• **DM → VS**: 1:many via USUBJID + STUDYID\n"
-                "• **DM → LB**: 1:many via USUBJID + STUDYID\n"
-                "• **DM → ADSL**: 1:1 via USUBJID\n\n"
-                "Navigate to 🔗 ER Diagram for the visual relationship map."
-            )
-        elif any(w in q for w in ["usubjid", "studyid", "armcd", "aesev", "field", "column", "variable"]):
-            response = (
-                "📖 **Field Definition**\n\n"
-                "**USUBJID** — Unique Subject Identifier\n"
-                "Standard: CDISC SDTM | Type: VARCHAR(100) | Required: Yes\n\n"
-                "A globally unique identifier combining sponsor, study, and subject number (e.g., `01-10023`). "
-                "This is the primary linkage key across all CDISC tables and must never be null.\n\n"
-                "Navigate to 📖 Data Dictionary for all 40+ field definitions."
-            )
-        elif any(w in q for w in ["adverse", "ae", "event", "severity", "aesev"]):
-            response = (
-                "⚠️ **Adverse Events Summary**\n\n"
-                "Your AE domain contains **1,140 records** across all subjects.\n\n"
-                "Severity breakdown:\n"
-                "• MILD — 624 events (54.7%)\n"
-                "• MODERATE — 398 events (34.9%)\n"
-                "• SEVERE — 118 events (10.4%)\n\n"
-                "Serious adverse events (AESER = 'Y'): **47 records**\n"
-                "Most common term: Upper Respiratory Tract Infection\n\n"
-                "Navigate to 📊 DQ Dashboard for trends over time."
-            )
-        elif any(w in q for w in ["glossary", "meddra", "gcp", "alcoa", "term", "definition", "mean"]):
-            response = (
-                "📚 **Clinical Term Lookup**\n\n"
-                "Key terms in your study:\n\n"
-                "• **MedDRA** — Medical Dictionary for Regulatory Activities. Hierarchical coding system for adverse events.\n"
-                "• **SDTM** — Study Data Tabulation Model. CDISC standard for raw clinical trial data.\n"
-                "• **ADaM** — Analysis Data Model. Derived datasets ready for statistical analysis.\n"
-                "• **ALCOA+** — Attributable, Legible, Contemporaneous, Original, Accurate + Complete, Consistent, Enduring, Available.\n\n"
-                "Navigate to 📚 GCP Glossary for 20+ clinical definitions."
-            )
-        else:
-            response = (
-                "🧬 I understand you're asking about your clinical database. "
-                "I can help you with:\n\n"
-                "• **Schema exploration** — table structures, column definitions\n"
-                "• **Data quality** — anomalies, constraint violations, remediation\n"
-                "• **ER relationships** — how tables connect via USUBJID\n"
-                "• **Regulatory reports** — CDISC-compliant documentation\n"
-                "• **Glossary** — GCP, MedDRA, SDTM, ADaM terminology\n\n"
-                "Try asking: *\"What DQ issues exist?\"* or *\"Show me the AE table schema.\"*"
-            )
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        st.rerun()
+# ─────────────────────────── Welcome screen ──────────────────────────────────
+if not st.session_state.messages:
+    st.markdown("""
+    <div class="welcome">
+      <div style="font-size:2.2rem;margin-bottom:0.4rem">🧬</div>
+      <div class="welcome-title">DataGenome AI — RAG Clinical Intelligence</div>
+      <div class="welcome-sub">
+        Ask anything about <strong>STUDY-2026-FIBER</strong> in plain English.<br>
+        BM25 retrieval finds the right knowledge chunks — no API key, no internet, no cost.
+      </div>
+      <div>
+        <span class="tip-chip">💡 "What DQ issues are blocking submission?"</span>
+        <span class="tip-chip">💡 "What columns does the LB table have?"</span>
+        <span class="tip-chip">💡 "What is ALCOA+ and why does it matter?"</span>
+        <span class="tip-chip">💡 "Explain the difference between ITT and SAF"</span>
+        <span class="tip-chip">💡 "What is the ER relationship between DM and AE?"</span>
+        <span class="tip-chip">💡 "Show me all critical DQ issues in the DM table"</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    with st.form("chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([5, 1])
-        user_input = col1.text_input("Ask a question...", label_visibility="collapsed", placeholder="e.g. What are the DQ issues in the VS table?")
-        submitted = col2.form_submit_button("Send", use_container_width=True)
-        if submitted and user_input.strip():
-            st.session_state.messages.append({"role": "user", "content": user_input.strip()})
-            st.rerun()
+# ─────────────────────────── Chat messages ───────────────────────────────────
+st.markdown('<div class="chat-area">', unsafe_allow_html=True)
 
-# ─── SCHEMA EXPLORER ───────────────────────────────────────────────────────────
-elif view == "📋 Schema Explorer":
-    st.subheader("📋 Clinical Schema Intelligence")
-    st.caption("Auto-discovered table indices and column categorization per CDISC SDTM & ADaM frameworks.")
+for idx, msg in enumerate(st.session_state.messages):
 
-    col1, col2 = st.columns([1, 3])
-
-    with col1:
-        table_options = {t["name"]: t for t in CLINICAL_TABLES}
-        selected_name = st.radio("Select Table", list(table_options.keys()))
-        table = table_options[selected_name]
-        badge = "tag-sdtm" if table["standard"] == "SDTM" else "tag-adam"
-        st.markdown(f"""
-        <div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:0.8rem;margin-top:0.5rem'>
-            <div style='font-weight:800;font-size:1.1rem'>{table['name']}</div>
-            <span class='{badge}'>{table['standard']}</span>
-            <div style='font-size:0.75rem;color:#64748b;margin-top:0.4rem'>{table['label']}</div>
-            <div style='font-size:0.8rem;color:#475569;margin-top:0.4rem'>{table['description']}</div>
-            <div style='font-size:0.75rem;font-weight:700;color:#0d9488;margin-top:0.5rem'>{table['rowCount']:,} rows</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        search = st.text_input("🔍 Search columns", placeholder="column name, type, description...")
-        cols_data = table["columns"]
-        if search:
-            cols_data = [c for c in cols_data if
-                         search.lower() in c["name"].lower() or
-                         search.lower() in c["description"].lower() or
-                         search.lower() in c["type"].lower()]
-
-        rows = []
-        for c in cols_data:
-            flags = []
-            if c["isPrimary"]: flags.append("🔑 PK")
-            if c["isForeign"]: flags.append("🔗 FK")
-            rows.append({
-                "Column": c["name"],
-                "Type": c["type"],
-                "Standard": c["cdiscStandard"],
-                "Flags": " ".join(flags) if flags else "—",
-                "Nullable": "Yes" if c["nullable"] else "No",
-                "Description": c["description"],
-                "Sample Data": ", ".join(c["sampleData"][:2]),
-            })
-
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True, height=420)
-        st.caption(f"Showing {len(rows)} of {len(table['columns'])} columns")
-
-# ─── ER DIAGRAM ────────────────────────────────────────────────────────────────
-elif view == "🔗 ER Diagram":
-    st.subheader("🔗 Entity-Relationship Diagram")
-    st.caption("Visual map of CDISC table relationships via shared subject identifiers.")
-
-    fig = go.Figure()
-
-    # Node positions
-    nodes = {
-        "DM": (0.5, 0.8, "#0d9488", "Demographics\n250 rows · SDTM"),
-        "AE": (0.1, 0.4, "#f43f5e", "Adverse Events\n1,140 rows · SDTM"),
-        "VS": (0.35, 0.15, "#eab308", "Vital Signs\n3,200 rows · SDTM"),
-        "LB": (0.65, 0.15, "#3b82f6", "Laboratory\n5,400 rows · SDTM"),
-        "ADSL": (0.9, 0.4, "#6366f1", "Subj-Level Analysis\n250 rows · ADaM"),
-    }
-
-    edges = [("DM", "AE"), ("DM", "VS"), ("DM", "LB"), ("DM", "ADSL")]
-    for src, tgt in edges:
-        x0, y0 = nodes[src][:2]
-        x1, y1 = nodes[tgt][:2]
-        fig.add_trace(go.Scatter(
-            x=[x0, x1], y=[y0, y1], mode="lines",
-            line=dict(color="#94a3b8", width=2.5, dash="dot"),
-            hoverinfo="skip", showlegend=False
-        ))
-        # USUBJID label on edge
-        fig.add_annotation(
-            x=(x0+x1)/2, y=(y0+y1)/2,
-            text="USUBJID", showarrow=False,
-            font=dict(size=9, color="#64748b"),
-            bgcolor="white", borderpad=2
+    if msg["role"] == "user":
+        st.markdown(
+            f'<div class="bubble-user">👤 {msg["text"]}</div>',
+            unsafe_allow_html=True
         )
 
-    for name, (x, y, color, label) in nodes.items():
-        fig.add_trace(go.Scatter(
-            x=[x], y=[y], mode="markers+text",
-            marker=dict(size=60, color=color, line=dict(color="white", width=3)),
-            text=[name], textposition="middle center",
-            textfont=dict(color="white", size=14, family="monospace"),
-            hovertext=[label], hoverinfo="text",
-            showlegend=False
-        ))
+    else:
+        # AI bubble
+        st.markdown(
+            f'<div class="bubble-ai">🧬 {msg["html"]}</div>',
+            unsafe_allow_html=True
+        )
 
-    fig.update_layout(
-        height=460, margin=dict(l=20, r=20, t=20, b=20),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.05, 1.05]),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.05, 1.05]),
-        plot_bgcolor="white", paper_bgcolor="white"
+        # Sources strip
+        sources = msg.get("sources", [])
+        if sources:
+            chips = "".join(
+                f'<span class="src-chip {s["category"]}" title="Score: {s["score"]}">'
+                f'{s["title"][:42]}{"…" if len(s["title"])>42 else ""}'
+                f'</span>'
+                for s in sources[:5]
+            )
+            st.markdown(
+                f'<div class="sources">📎 Retrieved: {chips}</div>',
+                unsafe_allow_html=True
+            )
+
+        # Action buttons
+        btns = msg.get("btns", [])
+        if btns:
+            ncols = min(len(btns), 4)
+            btn_cols = st.columns(ncols)
+            for j, (lbl, q) in enumerate(btns):
+                with btn_cols[j % ncols]:
+                    if st.button(lbl, key=f"btn_{idx}_{j}"):
+                        st.session_state.pending = q
+                        st.rerun()
+
+st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("<hr style='margin:0;border-color:#e9eef4'>", unsafe_allow_html=True)
+
+# ─────────────────────────── Input row ───────────────────────────────────────
+in_col, btn_col = st.columns([5, 1])
+with in_col:
+    user_input = st.text_area(
+        "msg",
+        label_visibility="collapsed",
+        placeholder="Ask about schemas, DQ issues, ER relationships, glossary, regulatory…  (Enter to send)",
+        height=66,
+        key=f"input_{st.session_state.input_key}",
     )
-    st.plotly_chart(fig, use_container_width=True)
+with btn_col:
+    st.markdown("<div class='send-wrap'>", unsafe_allow_html=True)
+    send = st.button("Send ▶", key="send_btn", use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("**Relationship Legend**")
-    rel_df = pd.DataFrame([
-        {"From": "DM", "To": "AE", "Type": "1:Many", "Key": "USUBJID + STUDYID", "Rule": "One subject → many adverse events"},
-        {"From": "DM", "To": "VS", "Type": "1:Many", "Key": "USUBJID + STUDYID", "Rule": "One subject → many vital sign timepoints"},
-        {"From": "DM", "To": "LB", "Type": "1:Many", "Key": "USUBJID + STUDYID", "Rule": "One subject → many lab results"},
-        {"From": "DM", "To": "ADSL", "Type": "1:1", "Key": "USUBJID", "Rule": "One subject → one analysis record"},
-    ])
-    st.dataframe(rel_df, use_container_width=True, hide_index=True)
+if send and user_input and user_input.strip():
+    submit(user_input)
+    st.rerun()
 
-# ─── DQ AUDIT ──────────────────────────────────────────────────────────────────
-elif view == "🛡️ DQ Audit":
-    st.subheader("🛡️ Data Quality Diagnostics")
-    st.caption("Automated constraint violation detection across CDISC domains.")
+# Enter key support via JS
+st.markdown("""
+<script>
+const ta = window.parent.document.querySelector('textarea');
+if (ta) {
+  ta.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const btn = window.parent.document.querySelector('button[kind="secondary"]');
+      if (btn) btn.click();
+    }
+  });
+}
+</script>
+""", unsafe_allow_html=True)
 
-    # KPIs
-    critical = sum(1 for i in MOCK_DQ_ISSUES if i["severity"] == "Critical")
-    warning = sum(1 for i in MOCK_DQ_ISSUES if i["severity"] == "Warning")
-    info = sum(1 for i in MOCK_DQ_ISSUES if i["severity"] == "Info")
-    total_affected = sum(i["count"] for i in MOCK_DQ_ISSUES)
-
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🔴 Critical", critical, "Blockers")
-    k2.metric("🟡 Warnings", warning, "Review needed")
-    k3.metric("🔵 Info", info, "Advisory")
-    k4.metric("📊 Affected Rows", total_affected)
-
-    st.divider()
-
-    # Filters
-    f1, f2 = st.columns(2)
-    sev_filter = f1.selectbox("Severity", ["All", "Critical", "Warning", "Info"])
-    table_filter = f2.selectbox("Table", ["All"] + list({i["tableId"].upper() for i in MOCK_DQ_ISSUES}))
-
-    issues = MOCK_DQ_ISSUES
-    if sev_filter != "All":
-        issues = [i for i in issues if i["severity"] == sev_filter]
-    if table_filter != "All":
-        issues = [i for i in issues if i["tableId"].upper() == table_filter]
-
-    for issue in issues:
-        sev_color = {"Critical": "🔴", "Warning": "🟡", "Info": "🔵"}.get(issue["severity"], "⚪")
-        with st.expander(f"{sev_color} [{issue['tableId'].upper()}] {issue['columnName']} — {issue['issueType']} ({issue['count']} records)"):
-            c1, c2 = st.columns(2)
-            c1.markdown(f"**Issue:** {issue['description']}")
-            c1.markdown(f"**Type:** `{issue['issueType']}`")
-            c1.markdown(f"**Affected:** {issue['count']} rows ({issue['percentage']}%)")
-            c2.info(f"**Remediation:** {issue['remediation']}")
-
-# ─── DQ DASHBOARD ──────────────────────────────────────────────────────────────
-elif view == "📊 DQ Dashboard":
-    st.subheader("📊 Clinical Operations DQ Dashboard")
-    st.caption("Real-time analytics: completeness metrics, error trends, and exception profiles.")
-
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🗃️ Total Records", "10,240")
-    k2.metric("⚠️ Exceptions", "6")
-    k3.metric("✅ Avg Completeness", "99.2%")
-    k4.metric("📉 Error Reduction", "↓87% (6mo)")
-
-    st.divider()
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        completeness_data = pd.DataFrame([
-            {"Table": "DM (Demog)", "Completeness %": 98.4},
-            {"Table": "AE (Events)", "Completeness %": 99.9},
-            {"Table": "VS (Vitals)", "Completeness %": 99.8},
-            {"Table": "LB (Labs)", "Completeness %": 98.4},
-            {"Table": "ADSL (Analysis)", "Completeness %": 99.6},
-        ])
-        fig1 = px.bar(completeness_data, x="Completeness %", y="Table", orientation="h",
-                      color="Completeness %", color_continuous_scale="Teal",
-                      range_x=[97, 100.2], title="Data Completeness by Table (%)")
-        fig1.update_layout(height=280, margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig1, use_container_width=True)
-
-    with col2:
-        sev_data = pd.DataFrame([
-            {"Severity": "Critical Blockers", "Count": 17},
-            {"Severity": "Safety Warnings", "Count": 152},
-            {"Severity": "Advisory Logs", "Count": 54},
-        ])
-        fig2 = px.pie(sev_data, names="Severity", values="Count",
-                      color_discrete_sequence=["#ef4444", "#f59e0b", "#3b82f6"],
-                      title="Exception Severity Distribution")
-        fig2.update_layout(height=280, margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig2, use_container_width=True)
-
-    timeline_data = pd.DataFrame([
-        {"Month": "Jan 26", "Anomalies": 45, "Error Rate %": 5.2},
-        {"Month": "Feb 26", "Anomalies": 38, "Error Rate %": 4.1},
-        {"Month": "Mar 26", "Anomalies": 27, "Error Rate %": 3.2},
-        {"Month": "Apr 26", "Anomalies": 19, "Error Rate %": 2.1},
-        {"Month": "May 26", "Anomalies": 8, "Error Rate %": 0.9},
-        {"Month": "Jun 26", "Anomalies": 6, "Error Rate %": 0.6},
-    ])
-    fig3 = px.line(timeline_data, x="Month", y=["Anomalies", "Error Rate %"],
-                   title="Anomaly Reduction Trend (2026)", markers=True,
-                   color_discrete_sequence=["#0d9488", "#f43f5e"])
-    fig3.update_layout(height=280, margin=dict(l=0, r=0, t=40, b=0))
-    st.plotly_chart(fig3, use_container_width=True)
-
-# ─── DATA DICTIONARY ───────────────────────────────────────────────────────────
-elif view == "📖 Data Dictionary":
-    st.subheader("📖 Clinical Data Dictionary")
-    st.caption("Comprehensive column definitions, data types, and CDISC standard classifications.")
-
-    all_cols = []
-    for table in CLINICAL_TABLES:
-        for col in table["columns"]:
-            all_cols.append({
-                "Table": table["name"],
-                "Standard": table["standard"],
-                "Column": col["name"],
-                "Type": col["type"],
-                "CDISC": col["cdiscStandard"],
-                "PK": "✅" if col["isPrimary"] else "",
-                "FK": "✅" if col["isForeign"] else "",
-                "Nullable": "Yes" if col["nullable"] else "No",
-                "Description": col["description"],
-                "Sample": ", ".join(col["sampleData"][:2]),
-            })
-
-    df = pd.DataFrame(all_cols)
-
-    c1, c2, c3 = st.columns(3)
-    table_f = c1.selectbox("Filter Table", ["All"] + list(df["Table"].unique()))
-    std_f = c2.selectbox("Filter Standard", ["All", "SDTM", "ADaM", "Both", "General"])
-    search_f = c3.text_input("🔍 Search column/description")
-
-    if table_f != "All":
-        df = df[df["Table"] == table_f]
-    if std_f != "All":
-        df = df[df["CDISC"] == std_f]
-    if search_f:
-        mask = (df["Column"].str.contains(search_f, case=False) |
-                df["Description"].str.contains(search_f, case=False))
-        df = df[mask]
-
-    st.dataframe(df, use_container_width=True, hide_index=True, height=480)
-    st.caption(f"Showing {len(df)} columns")
-
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Export CSV", csv, "data_dictionary.csv", "text/csv")
-
-# ─── REGULATORY REPORT ─────────────────────────────────────────────────────────
-elif view == "📜 Regulatory Report":
-    st.subheader("📜 Regulatory Dossier Generator")
-    st.caption("CDISC-compliant documentation for FDA/EMA submission review.")
-
-    st.success("✅ Study STUDY-2026-FIBER · Report generated: June 12, 2026")
-
-    tab1, tab2, tab3 = st.tabs(["📝 Study Summary", "🗂️ Dataset Inventory", "📋 DQ Compliance"])
-
-    with tab1:
-        st.markdown("""
-### Study Synopsis
-
-| Field | Value |
-|---|---|
-| **Study ID** | STUDY-2026-FIBER |
-| **Protocol Title** | Phase III Randomized Clinical Trial — Drug X vs Placebo |
-| **Sponsor** | DataGenome Pharma Inc. |
-| **Phase** | III |
-| **Indication** | Chronic Inflammatory Disease |
-| **Primary Endpoint** | Reduction in disease severity score at Week 24 |
-| **Randomization** | 1:1 Active vs Placebo |
-| **Subjects Enrolled** | 250 |
-| **CDISC Standard** | SDTM 3.3 + ADaM 1.3 |
-| **Data Cutoff** | May 31, 2026 |
-""")
-
-    with tab2:
-        inv_df = pd.DataFrame([
-            {"Domain": t["name"], "Label": t["label"], "Standard": t["standard"],
-             "Records": t["rowCount"], "Status": "✅ Validated"}
-            for t in CLINICAL_TABLES
-        ])
-        st.dataframe(inv_df, use_container_width=True, hide_index=True)
-        st.markdown(f"**Total Records:** {sum(t['rowCount'] for t in CLINICAL_TABLES):,}")
-
-    with tab3:
-        dq_df = pd.DataFrame([
-            {
-                "Domain": i["tableId"].upper(),
-                "Variable": i["columnName"],
-                "Issue Type": i["issueType"],
-                "Count": i["count"],
-                "% Affected": f"{i['percentage']}%",
-                "Severity": i["severity"],
-                "Status": "🔴 Open" if i["severity"] == "Critical" else "🟡 Under Review",
-            }
-            for i in MOCK_DQ_ISSUES
-        ])
-        st.dataframe(dq_df, use_container_width=True, hide_index=True)
-
-        csv = dq_df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Export DQ Report CSV", csv, "dq_compliance_report.csv", "text/csv")
-
-# ─── GCP GLOSSARY ──────────────────────────────────────────────────────────────
-elif view == "📚 GCP Glossary":
-    st.subheader("📚 Clinical Regulatory Glossary")
-    st.caption("Life sciences jargon, CDISC acronyms, MedDRA terms, and GCP guidelines.")
-
-    c1, c2 = st.columns([2, 1])
-    search_g = c1.text_input("🔍 Search terms and definitions")
-    std_g = c2.selectbox("Standard", ["ALL", "MedDRA", "SDTM", "ADaM", "GCP", "RWE"])
-
-    items = GLOSSARY
-    if std_g != "ALL":
-        items = [g for g in items if g["standard"] == std_g]
-    if search_g:
-        items = [g for g in items if
-                 search_g.lower() in g["term"].lower() or
-                 search_g.lower() in g["definition"].lower()]
-
-    for g in items:
-        color_map = {"MedDRA": "#fce7f3", "SDTM": "#ccfbf1", "ADaM": "#dbeafe", "GCP": "#fef3c7", "RWE": "#f3e8ff"}
-        bg = color_map.get(g["standard"], "#f8fafc")
-        with st.expander(f"**{g['term']}** · {g['standard']} · {g['category']}"):
-            st.markdown(f"**Definition:** {g['definition']}")
-            st.markdown(f"**Example:** _{g['example']}_")
-            if g.get("code"):
-                st.code(g["code"], language="text")
-
-    st.caption(f"Showing {len(items)} terms")
+st.markdown(
+    "<div style='text-align:center;font-size:0.67rem;color:#cbd5e1;"
+    "padding:0.3rem 0 0.5rem'>"
+    "BM25 Okapi retrieval · 76 clinical knowledge chunks · "
+    "Zero cost · No API key · Runs on Streamlit Cloud free tier"
+    "</div>",
+    unsafe_allow_html=True,
+)
