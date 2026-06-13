@@ -372,3 +372,68 @@ MOCK_DQ_ISSUES = [
         "remediation": "Audit date timestamps on associated Case Report Forms. Adjust standard chronologies to align recovery logs properly."
     },
 ]
+
+
+# ─── Dataset Statistics (simulated from study data) ───────────────────────────
+DATASET_STATS = {
+    "DM": {
+        "AGE":    {"min": 18,   "max": 76,   "mean": 44.3, "median": 43.0, "std": 12.7,
+                   "count": 250, "missing": 0,  "unique": 53,
+                   "distribution": {"18-29": 38, "30-44": 82, "45-59": 91, "60-76": 39}},
+        "SEX":    {"count": 250, "missing": 0, "unique": 2,
+                   "freq": {"M": 128, "F": 122}},
+        "RACE":   {"count": 250, "missing": 4, "unique": 5,
+                   "freq": {"WHITE": 142, "BLACK OR AFRICAN AMERICAN": 48,
+                            "ASIAN": 38, "HISPANIC OR LATINO": 18, "OTHER": 4}},
+        "ARMCD":  {"count": 250, "missing": 12, "unique": 2,
+                   "freq": {"ACT": 119, "PLAC": 119}},
+    },
+    "VS": {
+        "VSSTRESN": {
+            "SYSBP":  {"min": 88,   "max": 178,  "mean": 122.4, "median": 121.0, "std": 14.2,
+                       "count": 800, "missing": 3,  "unit": "mmHg"},
+            "DIABP":  {"min": -12,  "max": 112,  "mean": 76.8,  "median": 77.0,  "std": 9.8,
+                       "count": 800, "missing": 3,  "unit": "mmHg",
+                       "note": "⚠️ 3 negative values — DQ issue dq-002"},
+            "PULSE":  {"min": 52,   "max": 108,  "mean": 72.1,  "median": 71.0,  "std": 10.4,
+                       "count": 800, "missing": 0,  "unit": "beats/min"},
+            "TEMP":   {"min": 36.1, "max": 38.9, "mean": 37.0,  "median": 37.0,  "std": 0.4,
+                       "count": 800, "missing": 0,  "unit": "°C"},
+        }
+    },
+    "LB": {
+        "LBSTRESN": {
+            "ALT":    {"min": 8,    "max": 187,  "mean": 28.4,  "median": 24.0,  "std": 18.9,
+                       "count": 750, "missing": 52, "unit": "U/L"},
+            "AST":    {"min": 10,   "max": 142,  "mean": 24.7,  "median": 21.0,  "std": 14.3,
+                       "count": 750, "missing": 93, "unit": "U/L",
+                       "note": "⚠️ 93 missing — DQ issue dq-005"},
+            "WBC":    {"min": 2.1,  "max": 11.8, "mean": 6.4,   "median": 6.2,   "std": 1.7,
+                       "count": 750, "missing": 0,  "unit": "10^9/L"},
+            "HGB":    {"min": 8.9,  "max": 17.4, "mean": 13.8,  "median": 13.9,  "std": 1.6,
+                       "count": 750, "missing": 0,  "unit": "g/dL"},
+            "CREAT":  {"min": 0.5,  "max": 2.4,  "mean": 0.94,  "median": 0.90,  "std": 0.22,
+                       "count": 750, "missing": 0,  "unit": "mg/dL"},
+            "PLAT":   {"min": 98,   "max": 412,  "mean": 228.3, "median": 224.0, "std": 58.7,
+                       "count": 750, "missing": 0,  "unit": "10^9/L"},
+        }
+    },
+    "AE": {
+        "AESEQ":  {"min": 1,  "max": 12,  "mean": 4.56, "median": 4.0, "std": 2.8,
+                   "count": 1140, "missing": 0, "unique": 12},
+        "AESEV":  {"count": 1140, "missing": 0, "unique": 3,
+                   "freq": {"MILD": 624, "MODERATE": 398, "SEVERE": 118}},
+        "AESER":  {"count": 1140, "missing": 0, "unique": 2,
+                   "freq": {"N": 1093, "Y": 47}},
+    },
+    "ADSL": {
+        "AGEGR1": {"count": 250, "missing": 0, "unique": 2,
+                   "freq": {"<65": 211, ">=65": 39}},
+        "SAFFL":  {"count": 250, "missing": 0, "unique": 2,
+                   "freq": {"Y": 247, "N": 3}},
+        "ITTFL":  {"count": 250, "missing": 0, "unique": 2,
+                   "freq": {"Y": 250, "N": 0}},
+        "TRT01P": {"count": 250, "missing": 0, "unique": 2,
+                   "freq": {"Active Treatment Drug X": 125, "Placebo Baseline Control": 125}},
+    },
+}
