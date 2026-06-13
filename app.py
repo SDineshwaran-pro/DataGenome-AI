@@ -464,11 +464,12 @@ with chat_container:
             # Sources strip
             sources = msg.get("sources", [])
             if sources:
-                chips = "".join(
-                    f'<span class="src-chip {s["category"]}" title="score: {s.get(\"score\",\"—\")}">'
-                    f'{s["title"][:45]}{"…" if len(s["title"])>45 else ""}</span>'
-                    for s in sources[:5]
-                )
+                def _src_chip(s):
+                    cat   = s["category"]
+                    score = s.get("score", "—")
+                    title = s["title"][:45] + ("…" if len(s["title"]) > 45 else "")
+                    return f'<span class="src-chip {cat}" title="score: {score}">{title}</span>'
+                chips = "".join(_src_chip(s) for s in sources[:5])
                 st.markdown(
                     f'<div class="sources">📎 {chips}</div>',
                     unsafe_allow_html=True,
