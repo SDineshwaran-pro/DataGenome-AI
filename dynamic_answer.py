@@ -276,8 +276,19 @@ def ans_dq(report: dict, ds: DatasetInfo = None):
     if ds:
         issues = [i for i in issues if i["table"] == ds.name]
     if not issues:
-        name = ds.name if ds else "all datasets"
-        return (f'<strong>✅ No DQ issues found in {name}</strong>', [])
+        name   = ds.name if ds else "all datasets"
+        ds_all = report["datasets"]
+        rows_checked = sum(d.row_count for d in ([ds] if ds else ds_all))
+        cols_checked = sum(d.col_count for d in ([ds] if ds else ds_all))
+        return (
+            f'<strong>✅ No DQ issues found in {name}</strong><br>'
+            f'<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
+            f'padding:8px 12px;margin-top:6px;font-size:.83rem;color:#15803d">'
+            f'All {rows_checked:,} rows and {cols_checked} columns checked — '
+            f'no missing values, negative anomalies, constant columns, or low-cardinality issues detected.'
+            f'</div>',
+            [("📊 Overview", "Show dataset overview")]
+        )
 
     crit = [i for i in issues if i["severity"] == "Critical"]
     warn = [i for i in issues if i["severity"] == "Warning"]
