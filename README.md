@@ -1,52 +1,42 @@
-# 🧬 DataGenome AI — Universal RAG Chatbot
+# 🧬 DataGenome AI — Decoding the DNA of Life Sciences Data
 
-Upload any dataset, connect a database, click **Analyse**, then chat about your data.
-**No API key · No cost · Streamlit Cloud free tier compatible.**
+**All 8 abstract capabilities delivered through a single conversational chatbot.**
+No SQL · No API key · No cost · Streamlit Cloud free tier ready.
 
-## How to use
-1. **Upload files** tab → drop CSV / Excel / JSON / SQLite → click 🔍 Analyse
-2. **Connect Database** tab → enter SQLite path or PG/MySQL URI → click 🔌 Connect & Analyse
-3. **CDISC Demo** tab → use built-in clinical trial demo instantly
-4. Ask anything in the chat box below
+## Abstract Capabilities → Chat Commands
 
-## Supported formats
-| Source | Format |
+| Abstract Capability | Example Chat Commands |
 |---|---|
-| Files | CSV, TSV, TXT, Excel (.xlsx / .xls), JSON, SQLite (.db / .sqlite) |
-| Databases | SQLite file path, PostgreSQL URI, MySQL URI |
-| Multiple | Upload many files at once — all analysed together |
+| Schema Intelligence | "explain the patients table", "describe lab_results columns" |
+| Business Glossary | "what is ALT?", "define SDTM", "what does GCP mean?" |
+| DQ Audit | "show data quality issues", "missing values in patients" |
+| ER Diagram | "show ER diagram", "draw entity relationship map" |
+| Analytics Dashboard | "create a dashboard", "chart age distribution", "plot treatment arm" |
+| Data Dictionary | "show data dictionary", "export data dictionary" |
+| Regulatory PDF | "generate PDF report", "create regulatory report" |
+| Data Q&A | "max age in patients", "mean ALT value", "distribution of severity" |
 
-## What the chatbot can answer
-- *"What is the maximum salary?"*
-- *"Show schema of the orders table"*
-- *"Are there relationships between customers and orders?"*
-- *"Show missing values in transactions"*
-- *"Distribution of product_category"*
-- *"Show all data quality issues"*
-- *"What is the mean budget per department?"*
-- *"Full statistics for the employees table"*
+## Supported Data Sources
+- CSV / TSV / TXT / Excel (.xlsx/.xls) / JSON / SQLite
+- PostgreSQL / MySQL (via connection string)
+- Multiple files simultaneously for cross-table analysis
 
-## Run locally
+## Quick Start
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Deploy free on Streamlit Cloud
-1. Push this folder to a GitHub repo
-2. Go to [share.streamlit.io](https://share.streamlit.io) → New app
-3. Select repo → branch → `app.py` → Deploy
-4. No secrets or environment variables needed!
+## Deploy Free on Streamlit Cloud
+1. Push to GitHub
+2. share.streamlit.io → New app → select repo → app.py
+3. Deploy — no secrets needed!
 
 ## Files
 | File | Purpose |
 |---|---|
-| `app.py` | Main Streamlit UI — upload panel, chat, chips |
-| `data_loader.py` | Universal file reader (CSV/Excel/JSON/SQLite/DB) |
-| `analyzer.py` | Cross-dataset relationship & DQ detection engine |
-| `dynamic_rag.py` | BM25 index builder from uploaded data |
-| `dynamic_answer.py` | Answer generator for user datasets |
-| `rag_engine.py` | Static BM25 index for CDISC demo |
-| `answer_engine.py` | Answer generator for CDISC demo |
-| `stats_engine.py` | Natural language statistics for CDISC demo |
-| `data.py` | CDISC demo clinical data |
+| `app.py` | Streamlit UI — upload panel, capability bar, chat |
+| `core.py` | Data loading, profiling, ER SVG, Plotly dashboard, PDF, BM25 RAG |
+| `responder.py` | NL intent router + all 8 HTML answer builders |
+| `patients.csv` | Sample clinical trial patient data (30 subjects, 18 variables) |
+| `lab_results.csv` | Sample laboratory results (50 records, 12 parameters) |

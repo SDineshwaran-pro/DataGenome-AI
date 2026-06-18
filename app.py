@@ -1,625 +1,658 @@
 """
-DataGenome AI — Universal RAG Chatbot
-Upload panel always visible at top of page (no sidebar needed).
-No API key · No cost · Streamlit Cloud ready.
+DataGenome AI — Decoding the DNA of Life Sciences Data
+Complete implementation of all 8 abstract capabilities via conversational chatbot.
+No SQL knowledge required. No feature buttons — everything through natural language.
 """
-import re, io, os
+import io, base64, re
 import streamlit as st
 import pandas as pd
 
-from data_loader import load_uploaded_file, load_db_uri, load_sqlite_path
-from analyzer import build_analysis_report
-from dynamic_rag import DynamicRAG
-from dynamic_answer import generate_dynamic_answer
-from stats_engine import answer_stats_query
-from rag_engine import ClinicalRAG
-from answer_engine import generate_answer
+from core import load_file, build_report, build_rag, profile_df, LS_GLOSSARY
+from responder import respond, detect_intent
 
 st.set_page_config(
     page_title="DataGenome AI",
     page_icon="🧬",
     layout="wide",
-    initial_sidebar_state="collapsed",   # sidebar collapsed — everything on main page
+    initial_sidebar_state="collapsed",
 )
 
-# ─────────────────────────── CSS ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# CSS — complete design system
+# ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
 *,*::before,*::after{box-sizing:border-box}
 #MainMenu,footer,header{visibility:hidden}
-[data-testid="collapsedControl"]{display:none}   /* hide sidebar toggle arrow */
+[data-testid="collapsedControl"]{display:none}
 .block-container{padding:0!important;max-width:100%!important}
 
 /* ── Top bar ── */
-.topbar{background:linear-gradient(135deg,#0f172a 0%,#134e4a 100%);
-  color:white;padding:.5rem 1.2rem;display:flex;align-items:center;
-  gap:.6rem;flex-wrap:wrap}
-.topbar-title{font-size:1rem;font-weight:800}
-.topbar-sub{font-size:.68rem;opacity:.45}
+.topbar{
+  background:linear-gradient(135deg,#0f172a 0%,#0d4a45 60%,#134e4a 100%);
+  color:white;padding:.55rem 1.4rem;
+  display:flex;align-items:center;gap:.75rem;flex-wrap:wrap
+}
+.topbar-logo{font-size:1.35rem}
+.topbar-title{font-size:1.02rem;font-weight:800;letter-spacing:-.3px}
+.topbar-tag{font-size:.68rem;opacity:.5;font-style:italic}
 .topbar-right{margin-left:auto;font-size:.68rem;opacity:.6;
-  display:flex;align-items:center;gap:5px}
+  display:flex;align-items:center;gap:6px}
 .dot{width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block}
 
 /* ── Upload panel ── */
-.upload-panel{background:#fff;border:1px solid #e2e8f0;border-radius:12px;
-  padding:1rem 1.2rem;margin:.6rem 1rem .3rem}
-.upload-panel-title{font-size:.82rem;font-weight:700;color:#0f172a;margin-bottom:.5rem;
-  display:flex;align-items:center;gap:6px}
-.tab-bar{display:flex;gap:6px;margin-bottom:.75rem;flex-wrap:wrap}
-.tab-btn{padding:4px 14px;border-radius:20px;font-size:.75rem;font-weight:600;
-  cursor:pointer;border:1.5px solid #e2e8f0;background:#f8fafc;color:#475569;
-  transition:all .15s}
-.tab-btn.active{background:#0d9488;color:white;border-color:#0d9488}
-.dataset-pill{display:inline-flex;align-items:center;gap:5px;background:#f0fdf4;
-  border:1px solid #86efac;border-radius:20px;padding:3px 10px;
-  font-size:.72rem;color:#15803d;font-weight:600;margin:2px}
-.analysis-ready{background:#f0fdf4;border:1px solid #86efac;border-radius:10px;
-  padding:.5rem .8rem;font-size:.78rem;color:#15803d;
-  display:flex;align-items:center;gap:6px}
-.analysis-pending{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;
-  padding:.5rem .8rem;font-size:.78rem;color:#c2410c;
-  display:flex;align-items:center;gap:6px}
+.upload-panel{
+  background:#fff;border-bottom:1px solid #e2e8f0;
+  padding:.65rem 1.4rem .5rem
+}
+.up-title{font-size:.8rem;font-weight:700;color:#0f172a;
+  display:flex;align-items:center;gap:6px;margin-bottom:.4rem}
+
+/* ── Capability badges ── */
+.cap-bar{
+  display:flex;flex-wrap:wrap;gap:4px;
+  padding:.35rem 1.4rem;background:#f8fafc;
+  border-bottom:1px solid #e9eef4
+}
+.cap-badge{
+  display:inline-flex;align-items:center;gap:3px;
+  background:#fff;border:1px solid #e2e8f0;border-radius:20px;
+  padding:2px 10px;font-size:.67rem;color:#475569;font-weight:600
+}
+.cap-badge.active{background:#0d9488;color:white;border-color:#0d9488}
 
 /* ── Bubbles ── */
-.bubble-user{background:#0d9488;color:#fff!important;padding:.6rem 1rem;
-  border-radius:14px 14px 3px 14px;margin:.4rem 0 .4rem auto;
-  max-width:78%;width:fit-content;font-size:.87rem;line-height:1.55;
-  display:block;word-break:break-word}
-.bubble-ai{background:#fff;color:#1e293b!important;border:1px solid #e2e8f0;
-  border-left:3px solid #0d9488;padding:.8rem 1rem;
-  border-radius:3px 14px 14px 14px;margin:.4rem 0;
-  max-width:100%;font-size:.86rem;line-height:1.7;
-  display:block;word-break:break-word}
+.bubble-user{
+  background:#0d9488;color:#fff!important;
+  padding:.6rem 1rem;border-radius:14px 14px 3px 14px;
+  margin:.4rem 0 .4rem auto;max-width:76%;
+  width:fit-content;font-size:.87rem;line-height:1.55;
+  display:block;word-break:break-word
+}
+.bubble-ai{
+  background:#fff;color:#1e293b!important;
+  border:1px solid #e2e8f0;border-left:3px solid #0d9488;
+  padding:.8rem 1rem;border-radius:3px 14px 14px 14px;
+  margin:.4rem 0;width:100%;font-size:.85rem;
+  line-height:1.7;display:block;word-break:break-word
+}
 .bubble-ai strong{color:#0f172a}
-.bubble-ai code{background:#f1f5f9;color:#0f766e!important;
-  padding:1px 5px;border-radius:4px;font-size:.78rem}
-.bubble-ai pre{background:#f1f5f9;padding:6px 10px;border-radius:6px;
-  font-size:.73rem;overflow-x:auto;color:#334155}
+.bubble-ai code{
+  background:#f1f5f9;color:#0f766e!important;
+  padding:1px 5px;border-radius:4px;font-size:.77rem
+}
+.bubble-ai pre{
+  background:#f1f5f9;padding:6px 10px;border-radius:6px;
+  font-size:.72rem;overflow-x:auto;color:#334155;margin-top:5px
+}
+.bubble-ai table{width:100%;border-collapse:collapse;margin-top:6px}
+.bubble-ai th{
+  background:#f8fafc;padding:5px 8px;text-align:left;
+  font-size:.69rem;color:#64748b;border-bottom:1px solid #e2e8f0;
+  white-space:nowrap
+}
+.bubble-ai td{
+  padding:4px 8px;font-size:.74rem;
+  border-bottom:1px solid #f1f5f9;vertical-align:top
+}
 
 /* ── Stat cards ── */
 .sc-row{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}
-.sc{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
-  padding:5px 10px;min-width:72px;flex:1 1 auto}
-.sc-l{font-size:.62rem;color:#64748b;margin-bottom:1px}
-.sc-v{font-size:.9rem;font-weight:700;color:#0f172a}
+.sc{
+  background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
+  padding:5px 10px;min-width:70px;flex:1 1 auto
+}
+.sc-l{font-size:.61rem;color:#64748b;margin-bottom:1px}
+.sc-v{font-size:.88rem;font-weight:700;color:#0f172a}
 
 /* ── Bar ── */
 .bar-row{display:flex;align-items:center;gap:6px;margin:3px 0}
 .bar-bg{flex:1;background:#f1f5f9;border-radius:4px;height:11px;overflow:hidden}
 .bar-fill{height:100%;border-radius:4px}
 
-/* ── Sources ── */
-.sources{background:#f8fafc;border:1px solid #e9eef4;border-top:none;
-  border-radius:0 0 8px 8px;padding:5px 10px;font-size:.68rem;color:#94a3b8;
-  display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.src-chip{background:#e0f2fe;color:#0369a1;border-radius:10px;
-  padding:1px 7px;font-size:.65rem;font-weight:600}
+/* ── Source strip ── */
+.src-strip{
+  background:#f8fafc;border:1px solid #e9eef4;border-top:none;
+  border-radius:0 0 8px 8px;padding:4px 10px;
+  font-size:.66rem;color:#94a3b8;
+  display:flex;flex-wrap:wrap;gap:3px;align-items:center
+}
+.src-chip{
+  border-radius:10px;padding:1px 7px;font-size:.64rem;font-weight:600;
+  background:#e0f2fe;color:#0369a1
+}
 .src-chip.dq{background:#fee2e2;color:#dc2626}
 .src-chip.schema,.src-chip.column{background:#ccfbf1;color:#0f766e}
 .src-chip.relationship{background:#dbeafe;color:#1d4ed8}
 .src-chip.overview{background:#f3e8ff;color:#7c3aed}
-.src-chip.stats,.src-chip.glossary{background:#fef9c3;color:#854d0e}
-.src-chip.er{background:#dbeafe;color:#1d4ed8}
+.src-chip.glossary{background:#fef9c3;color:#854d0e}
+
+/* ── Download action card ── */
+.dl-card{
+  background:#f0fdf4;border:1px solid #86efac;border-radius:10px;
+  padding:.6rem .9rem;margin-top:6px;
+  display:flex;align-items:center;gap:10px;font-size:.8rem;color:#15803d
+}
+.dl-label{font-weight:700;flex:1}
 
 /* ── Buttons ── */
 div[data-testid="stButton"]>button{
   width:100%!important;text-align:left!important;
-  justify-content:flex-start!important;background:#f8fafc!important;
-  border:1px solid #e2e8f0!important;border-radius:8px!important;
-  color:#334155!important;font-size:.79rem!important;
-  padding:.38rem .72rem!important;white-space:normal!important;
-  word-break:break-word!important;height:auto!important;
-  min-height:32px!important;line-height:1.4!important}
+  justify-content:flex-start!important;
+  background:#f8fafc!important;border:1px solid #e2e8f0!important;
+  border-radius:8px!important;color:#334155!important;
+  font-size:.78rem!important;padding:.35rem .7rem!important;
+  white-space:normal!important;word-break:break-word!important;
+  height:auto!important;min-height:30px!important;line-height:1.4!important
+}
 div[data-testid="stButton"]>button:hover{
-  border-color:#0d9488!important;background:#f0fdf4!important;color:#0f172a!important}
+  border-color:#0d9488!important;background:#f0fdf4!important;color:#0f172a!important
+}
 
-/* Send */
+/* Send button */
 .send-wrap div[data-testid="stButton"]>button{
   background:#0d9488!important;color:#fff!important;border:none!important;
   font-weight:700!important;border-radius:10px!important;
-  justify-content:center!important;font-size:.88rem!important}
+  justify-content:center!important;font-size:.88rem!important
+}
 .send-wrap div[data-testid="stButton"]>button:hover{background:#0f766e!important}
 
-/* Analyse */
+/* Analyse button */
 .analyse-wrap div[data-testid="stButton"]>button{
   background:#7c3aed!important;color:#fff!important;border:none!important;
   font-weight:700!important;border-radius:10px!important;
-  justify-content:center!important;font-size:.85rem!important}
+  justify-content:center!important
+}
 .analyse-wrap div[data-testid="stButton"]>button:hover{background:#6d28d9!important}
 
-/* Clear */
+/* Clear button */
 .clear-wrap div[data-testid="stButton"]>button{
-  background:#fee2e2!important;color:#dc2626!important;
-  border:1px solid #fca5a5!important;font-weight:600!important;
-  border-radius:8px!important;justify-content:center!important;font-size:.78rem!important}
+  background:#fff!important;color:#dc2626!important;
+  border:1px solid #fca5a5!important;font-size:.75rem!important;
+  border-radius:8px!important;justify-content:center!important
+}
 
-/* Chips */
-.chip-wrap div[data-testid="stButton"]>button{
-  border-radius:20px!important;font-size:.7rem!important;
-  padding:.16rem .65rem!important;background:#f1f5f9!important;
-  color:#475569!important;width:auto!important;
-  min-height:26px!important;white-space:nowrap!important}
-.chip-wrap div[data-testid="stButton"]>button:hover{
-  background:#e0f2fe!important;border-color:#7dd3fc!important;color:#0369a1!important}
-
-/* Textarea — text MUST be visible */
+/* Textarea */
 .stTextArea>div>div>textarea{
   border-radius:10px!important;border:1.5px solid #cbd5e1!important;
-  font-size:.88rem!important;resize:none!important;
-  background:#ffffff!important;color:#0f172a!important;
-  caret-color:#0d9488!important;padding:10px 12px!important;line-height:1.5!important}
+  font-size:.87rem!important;resize:none!important;
+  background:#fff!important;color:#0f172a!important;
+  caret-color:#0d9488!important;padding:9px 12px!important;line-height:1.5!important
+}
 .stTextArea>div>div>textarea:focus{
   border-color:#0d9488!important;outline:none!important;
-  box-shadow:0 0 0 2px rgba(13,148,136,.15)!important;color:#0f172a!important}
+  box-shadow:0 0 0 2px rgba(13,148,136,.15)!important;color:#0f172a!important
+}
 .stTextArea>div>div>textarea::placeholder{color:#94a3b8!important;opacity:1!important}
 
 /* Text inputs */
 .stTextInput>div>div>input{
   border-radius:8px!important;border:1.5px solid #cbd5e1!important;
-  font-size:.85rem!important;background:#fff!important;
-  color:#0f172a!important;padding:6px 10px!important}
+  background:#fff!important;color:#0f172a!important;
+  font-size:.84rem!important;padding:5px 10px!important
+}
 .stTextInput>div>div>input:focus{border-color:#0d9488!important;color:#0f172a!important}
 
-/* File uploader */
-[data-testid="stFileUploader"]{border:2px dashed #cbd5e1;border-radius:10px;
-  padding:.5rem;background:#fafafa}
-[data-testid="stFileUploader"]:hover{border-color:#0d9488;background:#f0fdf4}
-[data-testid="stFileUploaderDropzone"]{background:transparent!important}
-
 /* Selectbox */
-.stSelectbox>div>div{border-radius:8px!important;border:1.5px solid #cbd5e1!important;
-  background:#fff!important;color:#0f172a!important}
+.stSelectbox>div>div{
+  border-radius:8px!important;border:1.5px solid #cbd5e1!important;
+  background:#fff!important;color:#0f172a!important
+}
+
+/* File uploader */
+[data-testid="stFileUploader"]{
+  border:2px dashed #cbd5e1;border-radius:10px;
+  padding:.4rem;background:#fafafa
+}
+[data-testid="stFileUploader"]:hover{border-color:#0d9488;background:#f0fdf4}
+
+/* Radio */
+.stRadio>div{gap:6px!important}
+.stRadio>div>label{
+  background:#f8fafc!important;border:1px solid #e2e8f0!important;
+  border-radius:8px!important;padding:4px 12px!important;
+  font-size:.78rem!important;cursor:pointer
+}
+
+/* Status */
+.status-ok{
+  background:#f0fdf4;border:1px solid #86efac;border-radius:8px;
+  padding:4px 10px;font-size:.73rem;color:#15803d;font-weight:600
+}
+.status-pending{
+  background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;
+  padding:4px 10px;font-size:.73rem;color:#c2410c
+}
+
+/* Welcome tips */
+.tip-row{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:.6rem}
+.tip{
+  background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;
+  padding:4px 10px;font-size:.73rem;color:#475569;cursor:default
+}
 
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:#f8fafc}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 
-@media(max-width:640px){
-  .bubble-user,.bubble-ai{max-width:98%;font-size:.83rem}
+@media(max-width:680px){
+  .bubble-user,.bubble-ai{max-width:98%;font-size:.82rem}
   .topbar-right{display:none}
   .sc{min-width:60px}
 }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ─────────────────────────── Init ────────────────────────────────────────────
-@st.cache_resource(show_spinner=False)
-def load_static_rag():
-    return ClinicalRAG()
-
+# ══════════════════════════════════════════════════════════════════════════════
+# Session state
+# ══════════════════════════════════════════════════════════════════════════════
 def _init():
-    defaults = {
-        "messages":   [],
-        "pending":    "",
-        "input_key":  0,
-        "datasets":   [],
-        "report":     None,
-        "dyn_rag":    None,
-        "mode":       "static",
-        "panel_tab":  "files",   # "files" | "database" | "demo"
-    }
-    for k, v in defaults.items():
+    for k, v in {
+        "messages":  [],
+        "pending":   "",
+        "input_key": 0,
+        "tables":    [],       # list[TableProfile]
+        "report":    None,
+        "rag_idx":   None,
+        "rag_chunks":[],
+        "mode":      "demo",   # "demo" | "user"
+        "src_tab":   "upload", # "upload" | "db" | "demo"
+        "dl_queue":  [],       # [(label, bytes, mime, filename)]
+    }.items():
         if k not in st.session_state:
             st.session_state[k] = v
-
 _init()
-static_rag = load_static_rag()
 
+# ── Load demo data on first run ───────────────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def _load_demo():
+    import os
+    base = os.path.dirname(os.path.abspath(__file__))
+    tables = []
+    for fname in ["patients.csv", "lab_results.csv"]:
+        path = os.path.join(base, fname)
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            tname = fname.replace(".csv","")
+            tables.append(profile_df(df, tname, "demo-csv"))
+    rep = build_report(tables)
+    idx, chunks = build_rag(rep)
+    return tables, rep, idx, chunks
 
-# ─────────────────────────── Submit ──────────────────────────────────────────
-def submit(q: str):
+def _ensure_demo():
+    if st.session_state.mode == "demo" and not st.session_state.report:
+        tables, rep, idx, chunks = _load_demo()
+        st.session_state.tables    = tables
+        st.session_state.report    = rep
+        st.session_state.rag_idx   = idx
+        st.session_state.rag_chunks= chunks
+_ensure_demo()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Submit logic
+# ══════════════════════════════════════════════════════════════════════════════
+def _submit(q: str):
     q = q.strip()
-    if not q:
+    if not q or not st.session_state.report:
         return
-    if st.session_state.mode == "dynamic" and st.session_state.report:
-        dyn    = st.session_state.dyn_rag
-        chunks = dyn.retrieve(q, top_k=6)
-        html, btns = generate_dynamic_answer(q, chunks, st.session_state.report)
-        sources = chunks
-    else:
-        stat_res = answer_stats_query(q)
-        if stat_res:
-            html, btns = stat_res
-            sources = [{"category":"stats","title":"Stats Engine","score":1.0}]
-        else:
-            chunks = static_rag.retrieve(q, top_k=6)
-            html, btns = generate_answer(q, chunks)
-            sources = chunks
+
+    result = respond(q, st.session_state.report,
+                     st.session_state.rag_idx,
+                     st.session_state.rag_chunks)
+
     st.session_state.messages.append({"role":"user","text":q})
-    st.session_state.messages.append({"role":"ai","html":html,"btns":btns,"sources":sources})
+    ai_msg = {
+        "role":   "ai",
+        "html":   result["html"],
+        "action": result.get("action"),
+        "chunks": result.get("chunks",[]),
+    }
+
+    # Queue download if action
+    if result.get("action") == "pdf" and result.get("action_data"):
+        st.session_state.dl_queue.append((
+            "📄 Download PDF Report",
+            result["action_data"],
+            "application/pdf",
+            "datagenome_report.pdf",
+        ))
+    elif result.get("action") == "dict_csv" and result.get("action_data"):
+        st.session_state.dl_queue.append((
+            "📥 Download Data Dictionary CSV",
+            result["action_data"],
+            "text/csv",
+            "data_dictionary.csv",
+        ))
+
+    st.session_state.messages.append(ai_msg)
     st.session_state.pending   = ""
     st.session_state.input_key += 1
 
 if st.session_state.pending:
-    submit(st.session_state.pending)
+    _submit(st.session_state.pending)
 
-
-# ─────────────────────────── Top bar ─────────────────────────────────────────
-mode_lbl = "Your data" if st.session_state.mode == "dynamic" else "CDISC demo"
-n_chunks = (st.session_state.dyn_rag.stats()["total"]
-            if st.session_state.dyn_rag else static_rag.stats()["total"])
+# ══════════════════════════════════════════════════════════════════════════════
+# TOP BAR
+# ══════════════════════════════════════════════════════════════════════════════
+s    = st.session_state.report["summary"] if st.session_state.report else {}
+mode = "Demo data" if st.session_state.mode=="demo" else "Your data"
+n_chunks = len(st.session_state.rag_chunks)
 
 st.markdown(f"""
 <div class="topbar">
-  <span style="font-size:1.2rem">🧬</span>
-  <span class="topbar-title">DataGenome AI</span>
-  <span class="topbar-sub">Upload · Analyse · Chat — No API key · Free</span>
+  <span class="topbar-logo">🧬</span>
+  <div>
+    <div class="topbar-title">DataGenome AI</div>
+    <div class="topbar-tag">Decoding the DNA of Life Sciences Data</div>
+  </div>
   <div class="topbar-right">
     <span class="dot"></span>
-    {mode_lbl} &nbsp;·&nbsp; {n_chunks} knowledge chunks
+    {mode} &nbsp;·&nbsp;
+    {s.get('n_tables',0)} tables &nbsp;·&nbsp;
+    {s.get('total_rows',0):,} rows &nbsp;·&nbsp;
+    {n_chunks} RAG chunks
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# UPLOAD / CONNECT PANEL  (always visible, top of page)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# DATA SOURCE PANEL
+# ══════════════════════════════════════════════════════════════════════════════
 with st.container():
     st.markdown('<div class="upload-panel">', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="upload-panel-title">'
-        '📂 <span>Data Source</span>'
-        '<span style="margin-left:auto;font-size:.7rem;color:#94a3b8;font-weight:400">'
-        'Upload files or connect a database, then click Analyse</span></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="up-title">📂 Data Source — Upload files, connect a database, or use the built-in demo</div>', unsafe_allow_html=True)
 
-    # Tab selector
-    tab_col1, tab_col2, tab_col3 = st.columns(3)
-    with tab_col1:
-        if st.button("📁 Upload Files",   key="tab_files",
-                     type="primary" if st.session_state.panel_tab=="files" else "secondary"):
-            st.session_state.panel_tab = "files"
-            st.rerun()
-    with tab_col2:
-        if st.button("🔌 Connect Database", key="tab_db",
-                     type="primary" if st.session_state.panel_tab=="database" else "secondary"):
-            st.session_state.panel_tab = "database"
-            st.rerun()
-    with tab_col3:
-        if st.button("🧬 CDISC Demo",     key="tab_demo",
-                     type="primary" if st.session_state.panel_tab=="demo" else "secondary"):
-            st.session_state.panel_tab = "demo"
-            st.rerun()
+    tab_c = st.columns([1,1,1,2])
+    with tab_c[0]:
+        if st.button("📁 Upload Files",
+                     type="primary" if st.session_state.src_tab=="upload" else "secondary",
+                     key="tab_up"):
+            st.session_state.src_tab="upload"; st.rerun()
+    with tab_c[1]:
+        if st.button("🔌 Connect DB",
+                     type="primary" if st.session_state.src_tab=="db" else "secondary",
+                     key="tab_db"):
+            st.session_state.src_tab="db"; st.rerun()
+    with tab_c[2]:
+        if st.button("🧬 Demo Data",
+                     type="primary" if st.session_state.src_tab=="demo" else "secondary",
+                     key="tab_demo"):
+            st.session_state.src_tab="demo"; st.rerun()
+    with tab_c[3]:
+        # Status indicator
+        if st.session_state.report:
+            tnames = " · ".join(f"`{t.name}`({t.row_count:,}r)" for t in st.session_state.tables)
+            st.markdown(f'<div class="status-ok">✅ Ready — {tnames}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="status-pending">⏳ No data loaded</div>', unsafe_allow_html=True)
 
-    st.markdown("<hr style='margin:.5rem 0;border-color:#f1f5f9'>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:.45rem'>", unsafe_allow_html=True)
 
-    # ── TAB: File upload ──────────────────────────────────────────────────────
-    if st.session_state.panel_tab == "files":
-        up_col, btn_col = st.columns([4, 1])
-        with up_col:
+    # ── Upload tab ────────────────────────────────────────────────────────────
+    if st.session_state.src_tab == "upload":
+        up_c, btn_c = st.columns([5,1])
+        with up_c:
             uploaded = st.file_uploader(
-                "Drop CSV, Excel, JSON or SQLite files here — multiple files supported",
+                "CSV · TSV · Excel · JSON · SQLite — drop multiple files for cross-table analysis",
                 type=["csv","tsv","txt","xlsx","xls","json","db","sqlite","sqlite3"],
                 accept_multiple_files=True,
-                key="file_uploader",
                 label_visibility="visible",
+                key="uploader",
             )
-        with btn_col:
-            st.markdown("<div style='padding-top:1.6rem'>", unsafe_allow_html=True)
-
-            # Status
-            if st.session_state.mode == "dynamic" and st.session_state.report:
-                ds_list = st.session_state.datasets
-                s       = st.session_state.report["summary"]
-                pills   = "".join(
-                    f'<span class="dataset-pill">✓ {d.name} ({d.row_count:,}r)</span>'
-                    for d in ds_list
-                )
-                st.markdown(
-                    f'<div class="analysis-ready">✅ Analysis ready</div>'
-                    f'<div style="margin-top:4px;font-size:.72rem">{pills}</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown("<div style='margin-top:6px'>", unsafe_allow_html=True)
-                st.markdown('<div class="clear-wrap">', unsafe_allow_html=True)
-                if st.button("🗑️ Clear data", key="clear_btn"):
-                    for k in ["datasets","report","dyn_rag","messages"]:
-                        st.session_state[k] = [] if k in ("datasets","messages") else None
-                    st.session_state.mode      = "static"
-                    st.session_state.input_key += 1
-                    st.rerun()
-                st.markdown("</div></div>", unsafe_allow_html=True)
-
-            elif uploaded:
-                st.markdown(
-                    f'<div class="analysis-pending">'
-                    f'⏳ {len(uploaded)} file(s) ready — click Analyse</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown("<div style='margin-top:6px'>", unsafe_allow_html=True)
-                st.markdown('<div class="analyse-wrap">', unsafe_allow_html=True)
+        with btn_c:
+            if uploaded:
+                st.markdown('<div class="analyse-wrap" style="padding-top:1.55rem">', unsafe_allow_html=True)
                 if st.button("🔍 Analyse", key="analyse_btn", use_container_width=True):
-                    with st.spinner("📊 Profiling datasets…"):
-                        all_ds, errors = [], []
+                    with st.spinner("Profiling datasets…"):
+                        all_tables, errs = [], []
                         for f in uploaded:
                             try:
                                 f.seek(0)
-                                all_ds.extend(load_uploaded_file(f))
+                                all_tables.extend(load_file(f))
                             except Exception as e:
-                                errors.append(f"{f.name}: {e}")
-                    if errors:
-                        for err in errors:
-                            st.error(err)
-                    if all_ds:
-                        with st.spinner("🔗 Detecting relationships…"):
-                            report  = build_analysis_report(all_ds)
-                            dyn_rag = DynamicRAG(report)
-                        st.session_state.datasets   = all_ds
-                        st.session_state.report     = report
-                        st.session_state.dyn_rag    = dyn_rag
-                        st.session_state.mode       = "dynamic"
+                                errs.append(f"{f.name}: {e}")
+                    for e in errs:
+                        st.error(e)
+                    if all_tables:
+                        with st.spinner("Building RAG index & detecting relationships…"):
+                            rep = build_report(all_tables)
+                            idx, chunks = build_rag(rep)
+                        st.session_state.tables     = all_tables
+                        st.session_state.report     = rep
+                        st.session_state.rag_idx    = idx
+                        st.session_state.rag_chunks = chunks
+                        st.session_state.mode       = "user"
                         st.session_state.messages   = []
+                        st.session_state.dl_queue   = []
                         st.session_state.input_key += 1
-                        s = report["summary"]
-                        tnames = ", ".join(f"`{d.name}`" for d in all_ds)
-                        html = (
-                            f"<strong>✅ {len(all_ds)} dataset(s) analysed — ready to chat!</strong><br>"
-                            f"<span style='font-size:.79rem;color:#64748b'>Tables: {tnames}</span>"
+                        ss = rep["summary"]
+                        # Welcome message
+                        tns = ", ".join(f"`{t.name}`" for t in all_tables)
+                        welcome_html = (
+                            f"<strong>✅ {len(all_tables)} dataset(s) analysed — all 8 capabilities ready!</strong><br>"
+                            f"<span style='font-size:.78rem;color:#64748b'>Tables: {tns}</span>"
                             f"<div class='sc-row' style='margin-top:8px'>"
                             + "".join(
                                 f"<div class='sc'><div class='sc-l'>{lb}</div>"
                                 f"<div class='sc-v' style='color:{cl}'>{vl}</div></div>"
                                 for lb,vl,cl in [
-                                    ("Datasets",     len(all_ds),              "#0f172a"),
-                                    ("Total rows",   f"{s['total_rows']:,}",   "#0f172a"),
-                                    ("Total cols",   s["total_cols"],           "#0f172a"),
-                                    ("Relationships",s["total_relationships"], "#0d9488"),
-                                    ("DQ issues",    s["total_dq_issues"],
-                                     "#dc2626" if s["critical_dq"]>0 else "#ca8a04"),
+                                    ("Datasets",     len(all_tables),             "#0f172a"),
+                                    ("Total rows",   f"{ss['total_rows']:,}",     "#0f172a"),
+                                    ("Total cols",   ss["total_cols"],             "#0f172a"),
+                                    ("Relationships",ss["n_rels"],                "#0d9488"),
+                                    ("DQ issues",    ss["n_dq"],
+                                     "#dc2626" if ss["n_crit"]>0 else "#ca8a04"),
                                 ]
                             )
                             + "</div>"
+                            + "<div style='margin-top:8px;font-size:.78rem;color:#475569'>"
+                            + "Try: <em>'create dashboard'</em> · <em>'show ER diagram'</em> · "
+                            + "<em>'generate PDF report'</em> · <em>'explain patients table'</em> · "
+                            + "<em>'what is the max age?'</em> · <em>'export data dictionary'</em>"
+                            + "</div>"
                         )
-                        btns = (
-                            [("📊 Full overview",    "Show dataset overview"),
-                             ("🔗 Relationships",    "Show all relationships between datasets"),
-                             ("🛡️ DQ Issues",       "Show all data quality issues")]
-                            + [(f"📋 {d.name} schema", f"Show schema of {d.name}") for d in all_ds[:4]]
-                            + [(f"📊 {d.name} stats",  f"Show statistics for {d.name}") for d in all_ds[:4]]
-                        )
-                        st.session_state.messages.append(
-                            {"role":"ai","html":html,"btns":btns,"sources":[]}
-                        )
+                        st.session_state.messages.append({
+                            "role":"ai","html":welcome_html,
+                            "action":None,"chunks":[]
+                        })
                         st.rerun()
-                st.markdown("</div></div>", unsafe_allow_html=True)
-            else:
-                st.markdown(
-                    '<div style="font-size:.75rem;color:#94a3b8;padding-top:.5rem">'
-                    '👈 Select files to begin</div>',
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── TAB: Database connect ─────────────────────────────────────────────────
-    elif st.session_state.panel_tab == "database":
-        db_col1, db_col2, db_col3 = st.columns([1, 3, 1])
-        with db_col1:
-            db_type = st.selectbox(
-                "Database type",
-                ["SQLite", "PostgreSQL", "MySQL"],
-                key="db_type_sel",
-                label_visibility="visible",
-            )
-        with db_col2:
+    # ── DB tab ────────────────────────────────────────────────────────────────
+    elif st.session_state.src_tab == "db":
+        db_c1, db_c2, db_c3 = st.columns([1,3,1])
+        with db_c1:
+            db_type = st.selectbox("Type",["SQLite","PostgreSQL","MySQL"],key="db_type")
+        with db_c2:
             if db_type == "SQLite":
-                db_path = st.text_input(
-                    "SQLite file path",
-                    placeholder="/path/to/your/database.db  or  ./mydata.sqlite",
-                    key="sqlite_path_input",
-                )
+                db_path = st.text_input("File path",placeholder="/path/to/database.db",key="sqlite_path")
                 conn_uri = db_path.strip() if db_path else ""
-            elif db_type == "PostgreSQL":
-                c1,c2,c3,c4,c5 = st.columns([2,1,2,1,1])
-                with c1: host = st.text_input("Host", value="localhost", key="pg_h")
-                with c2: port = st.text_input("Port", value="5432",      key="pg_p")
-                with c3: db   = st.text_input("Database",                key="pg_d")
-                with c4: user = st.text_input("User",                    key="pg_u")
-                with c5: pwd  = st.text_input("Password", type="password", key="pg_pw")
-                conn_uri = f"postgresql://{user}:{pwd}@{host}:{port}/{db}" if db and user else ""
             else:
                 c1,c2,c3,c4,c5 = st.columns([2,1,2,1,1])
-                with c1: host = st.text_input("Host", value="localhost", key="my_h")
-                with c2: port = st.text_input("Port", value="3306",      key="my_p")
-                with c3: db   = st.text_input("Database",                key="my_d")
-                with c4: user = st.text_input("User",                    key="my_u")
-                with c5: pwd  = st.text_input("Password", type="password", key="my_pw")
-                conn_uri = f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}" if db and user else ""
-        with db_col3:
+                host = c1.text_input("Host","localhost",key="db_host")
+                port = c2.text_input("Port","5432" if db_type=="PostgreSQL" else "3306",key="db_port")
+                db   = c3.text_input("Database",key="db_name")
+                user = c4.text_input("User",key="db_user")
+                pwd  = c5.text_input("Password",type="password",key="db_pwd")
+                prefix = "postgresql" if db_type=="PostgreSQL" else "mysql+pymysql"
+                conn_uri = f"{prefix}://{user}:{pwd}@{host}:{port}/{db}" if db and user else ""
+        with db_c3:
             st.markdown("<div style='padding-top:1.55rem'>", unsafe_allow_html=True)
             st.markdown('<div class="analyse-wrap">', unsafe_allow_html=True)
-            connect_clicked = st.button("🔌 Connect & Analyse",
-                                         key="db_connect_btn",
-                                         use_container_width=True,
-                                         disabled=not bool(conn_uri))
+            if st.button("🔌 Connect",key="db_connect",use_container_width=True,disabled=not bool(conn_uri)):
+                with st.spinner("Connecting…"):
+                    try:
+                        import sqlite3
+                        if db_type=="SQLite":
+                            import tempfile, os
+                            conn = sqlite3.connect(conn_uri)
+                            tbls = pd.read_sql("SELECT name FROM sqlite_master WHERE type='table'",conn)
+                            all_tables = []
+                            for tn in tbls["name"].tolist():
+                                df = pd.read_sql(f'SELECT * FROM "{tn}"',conn)
+                                all_tables.append(profile_df(df,tn,"sqlite"))
+                            conn.close()
+                        else:
+                            from sqlalchemy import create_engine, inspect
+                            eng  = create_engine(conn_uri,connect_args={"connect_timeout":8})
+                            insp = inspect(eng)
+                            all_tables = []
+                            with eng.connect() as c:
+                                for tn in insp.get_table_names():
+                                    df = pd.read_sql_table(tn,c)
+                                    all_tables.append(profile_df(df,tn,db_type.lower()))
+                        rep = build_report(all_tables)
+                        idx,chunks = build_rag(rep)
+                        st.session_state.tables=all_tables; st.session_state.report=rep
+                        st.session_state.rag_idx=idx; st.session_state.rag_chunks=chunks
+                        st.session_state.mode="user"; st.session_state.messages=[]
+                        st.session_state.dl_queue=[]; st.session_state.input_key+=1
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Connection failed: {e}")
             st.markdown("</div></div>", unsafe_allow_html=True)
 
-        if connect_clicked and conn_uri:
-            with st.spinner("Connecting to database…"):
-                try:
-                    if db_type == "SQLite":
-                        all_ds = load_sqlite_path(conn_uri)
-                    else:
-                        all_ds = load_db_uri(conn_uri)
-                    report  = build_analysis_report(all_ds)
-                    dyn_rag = DynamicRAG(report)
-                    st.session_state.datasets   = all_ds
-                    st.session_state.report     = report
-                    st.session_state.dyn_rag    = dyn_rag
-                    st.session_state.mode       = "dynamic"
-                    st.session_state.messages   = []
-                    st.session_state.input_key += 1
-                    s = report["summary"]
-                    html = (
-                        f"<strong>✅ DB connected — {len(all_ds)} table(s) loaded</strong>"
-                        f"<div class='sc-row' style='margin-top:8px'>"
-                        + "".join(
-                            f"<div class='sc'><div class='sc-l'>{lb}</div>"
-                            f"<div class='sc-v'>{vl}</div></div>"
-                            for lb,vl in [("Tables",len(all_ds)),
-                                          ("Rows",f"{s['total_rows']:,}"),
-                                          ("Relations",s["total_relationships"]),
-                                          ("DQ issues",s["total_dq_issues"])]
-                        )
-                        + "</div>"
-                    )
-                    btns = (
-                        [("📊 Overview","Show dataset overview"),
-                         ("🔗 Relationships","Show all relationships between datasets"),
-                         ("🛡️ DQ Issues","Show all data quality issues")]
-                        + [(f"📋 {d.name}", f"Show schema of {d.name}") for d in all_ds[:5]]
-                    )
-                    st.session_state.messages.append(
-                        {"role":"ai","html":html,"btns":btns,"sources":[]}
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Connection failed: {e}")
-
-    # ── TAB: CDISC Demo ───────────────────────────────────────────────────────
+    # ── Demo tab ──────────────────────────────────────────────────────────────
     else:
-        demo_col1, demo_col2 = st.columns([3, 1])
-        with demo_col1:
+        d1,d2 = st.columns([4,1])
+        with d1:
             st.markdown("""
-            <div style="font-size:.82rem;color:#475569;line-height:1.7;padding:.2rem 0">
-            Built-in demo: <strong>STUDY-2026-FIBER</strong> — Phase III RCT clinical trial.<br>
-            5 CDISC tables (DM, AE, VS, LB, ADSL) · 10,240 records · 78 knowledge chunks.<br>
-            Ask about schemas, DQ issues, ER relationships, glossary terms, and statistics.
+            <div style='font-size:.81rem;color:#475569;line-height:1.7;padding:.1rem 0'>
+            Built-in life sciences demo: <strong>patients</strong> (30 subjects, 18 clinical variables)
+            + <strong>lab_results</strong> (50 records, 12 lab parameters).<br>
+            Phase III RCT prototype — DRUG_X vs PLACEBO · ALT · AST · WBC · HGB · Creatinine.
             </div>
             """, unsafe_allow_html=True)
-        with demo_col2:
-            if st.session_state.mode != "static":
+        with d2:
+            if st.session_state.mode != "demo":
                 st.markdown('<div class="analyse-wrap">', unsafe_allow_html=True)
-                if st.button("🧬 Use CDISC Demo", key="use_demo_btn", use_container_width=True):
-                    st.session_state.mode      = "static"
-                    st.session_state.messages  = []
-                    st.session_state.input_key += 1
+                if st.button("Use Demo",key="use_demo",use_container_width=True):
+                    tables,rep,idx,chunks = _load_demo()
+                    st.session_state.tables=tables; st.session_state.report=rep
+                    st.session_state.rag_idx=idx; st.session_state.rag_chunks=chunks
+                    st.session_state.mode="demo"; st.session_state.messages=[]
+                    st.session_state.dl_queue=[]; st.session_state.input_key+=1
                     st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
             else:
-                st.markdown(
-                    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
-                    'padding:5px 10px;font-size:.75rem;color:#15803d;font-weight:600">'
-                    '✅ CDISC demo active</div>',
-                    unsafe_allow_html=True,
-                )
+                st.markdown('<div class="status-ok">✅ Active</div>', unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)  # close upload-panel
+    if st.session_state.report:
+        cl_c1, cl_c2 = st.columns([6,1])
+        with cl_c2:
+            st.markdown('<div class="clear-wrap">', unsafe_allow_html=True)
+            if st.button("🗑️ Clear",key="clear_btn"):
+                for k in ["tables","report","rag_idx","rag_chunks","messages","dl_queue"]:
+                    st.session_state[k] = [] if isinstance(st.session_state[k],list) else None
+                st.session_state.mode="demo"; st.session_state.input_key+=1
+                _ensure_demo(); st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
-# ─────────────────────────── Quick chips ─────────────────────────────────────
-if st.session_state.mode == "dynamic" and st.session_state.report:
-    ds_list = st.session_state.datasets
-    CHIPS = (
-        [("📊 Overview",      "Show dataset overview"),
-         ("🔗 Relationships", "Show all relationships between datasets"),
-         ("🛡️ DQ Issues",    "Show all data quality issues")]
-        + [(f"📋 {d.name}", f"Show schema of {d.name}") for d in ds_list[:5]]
-    )
-else:
-    CHIPS = [
-        ("🛡️ DQ Audit",    "Show all data quality issues and remediations"),
-        ("📋 SDTM Tables", "List all SDTM and ADaM tables"),
-        ("🔗 ER Diagram",  "Explain ER relationships between all tables"),
-        ("📖 Dictionary",  "Show full data dictionary for all columns"),
-        ("📚 Glossary",    "List all CDISC and GCP glossary terms"),
-        ("📊 Dashboard",   "Show DQ completeness metrics and error trends"),
-        ("📜 Reg Report",  "Show regulatory submission status and dossier"),
-    ]
+# ══════════════════════════════════════════════════════════════════════════════
+# CAPABILITY BAR  (shows which abstract capabilities are fulfilled)
+# ══════════════════════════════════════════════════════════════════════════════
+CAPS = [
+    ("🔍","Schema Intelligence"),
+    ("📚","Business Glossary"),
+    ("🛡️","DQ Audit"),
+    ("🔗","ER Diagram"),
+    ("📊","Analytics Dashboard"),
+    ("📖","Data Dictionary"),
+    ("📄","Regulatory PDF"),
+    ("💬","Data Q&A"),
+]
+badge_html = "".join(
+    f'<span class="cap-badge {"active" if st.session_state.report else ""}">{icon} {lbl}</span>'
+    for icon,lbl in CAPS
+)
+st.markdown(f'<div class="cap-bar">{badge_html}</div>', unsafe_allow_html=True)
 
-chip_cols = st.columns(min(len(CHIPS), 8))
-for col, (label, query) in zip(chip_cols, CHIPS[:8]):
-    with col:
-        st.markdown('<div class="chip-wrap">', unsafe_allow_html=True)
-        if st.button(label, key=f"chip_{label}"):
-            st.session_state.pending = query
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-st.markdown("<hr style='margin:0;border-color:#e9eef4'>", unsafe_allow_html=True)
-
-
-# ─────────────────────────── Welcome ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# WELCOME SCREEN
+# ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.messages:
-    st.markdown("""
-    <div style="text-align:center;padding:1.5rem 1rem .8rem;color:#64748b">
-      <div style="font-size:1.8rem;margin-bottom:.35rem">🧬</div>
-      <div style="font-size:.95rem;font-weight:800;color:#0f172a;margin-bottom:.4rem">
-        DataGenome AI — Upload your data and start chatting
+    name_str = " + ".join(t.name for t in st.session_state.tables) if st.session_state.tables else "demo"
+    st.markdown(f"""
+    <div style="text-align:center;padding:1.8rem 1rem .8rem;color:#64748b">
+      <div style="font-size:2.2rem;margin-bottom:.3rem">🧬</div>
+      <div style="font-size:.98rem;font-weight:800;color:#0f172a;margin-bottom:.4rem">
+        DataGenome AI — All 8 Capabilities Active
       </div>
-      <div style="font-size:.81rem;line-height:1.65;max-width:560px;margin:0 auto .8rem">
-        Step 1 → Choose a tab above &nbsp;·&nbsp;
-        Step 2 → Upload files or connect a DB &nbsp;·&nbsp;
-        Step 3 → Click <strong style="color:#7c3aed">Analyse</strong> &nbsp;·&nbsp;
-        Step 4 → Ask anything
+      <div style="font-size:.8rem;line-height:1.65;max-width:620px;margin:0 auto .7rem;color:#475569">
+        Loaded: <strong>{name_str}</strong>. Ask anything in plain English —
+        schema exploration, DQ audit, ER diagram, analytics dashboard,
+        data dictionary, PDF report, business glossary, or statistical Q&amp;A.
       </div>
-      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px">
-        <span style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;
-          padding:4px 10px;font-size:.74rem;color:#475569">
-          💡 "What is the max age in employees?"</span>
-        <span style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;
-          padding:4px 10px;font-size:.74rem;color:#475569">
-          💡 "Show schema of orders"</span>
-        <span style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;
-          padding:4px 10px;font-size:.74rem;color:#475569">
-          💡 "Are there relationships between tables?"</span>
-        <span style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;
-          padding:4px 10px;font-size:.74rem;color:#475569">
-          💡 "Show missing values"</span>
-        <span style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;
-          padding:4px 10px;font-size:.74rem;color:#475569">
-          💡 "Distribution of status column"</span>
+      <div class="tip-row">
+        <span class="tip">💡 explain the patients table</span>
+        <span class="tip">💡 create a dashboard</span>
+        <span class="tip">💡 show ER diagram</span>
+        <span class="tip">💡 generate PDF report</span>
+        <span class="tip">💡 what is the max age?</span>
+        <span class="tip">💡 show DQ issues</span>
+        <span class="tip">💡 export data dictionary</span>
+        <span class="tip">💡 what is ALT?</span>
+        <span class="tip">💡 relationship between tables</span>
+        <span class="tip">💡 distribution of treatment arm</span>
+        <span class="tip">💡 show missing values in lab_results</span>
+        <span class="tip">💡 dashboard for age vs response score</span>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CHAT MESSAGES
+# ══════════════════════════════════════════════════════════════════════════════
+chat_wrap = st.container()
+with chat_wrap:
+    for idx, msg in enumerate(st.session_state.messages):
+        if msg["role"] == "user":
+            st.markdown(
+                f'<div class="bubble-user">👤 {msg["text"]}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f'<div class="bubble-ai">🧬 {msg["html"]}</div>',
+                unsafe_allow_html=True,
+            )
+            # Source strip
+            chunks = msg.get("chunks",[])
+            if chunks:
+                def _chip(c):
+                    cat   = c.get("cat","info")
+                    score = c.get("score","—")
+                    title = c.get("title","")
+                    short = title[:40]+("…" if len(title)>40 else "")
+                    return f'<span class="src-chip {cat}" title="BM25 score:{score}">{short}</span>'
+                chips = "".join(_chip(c) for c in chunks[:5])
+                st.markdown(f'<div class="src-strip">📎 RAG sources: {chips}</div>',
+                            unsafe_allow_html=True)
 
-# ─────────────────────────── Chat messages ───────────────────────────────────
-for idx, msg in enumerate(st.session_state.messages):
-    if msg["role"] == "user":
-        st.markdown(
-            f'<div class="bubble-user">👤 {msg["text"]}</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f'<div class="bubble-ai">🧬 {msg["html"]}</div>',
-            unsafe_allow_html=True,
-        )
-        sources = msg.get("sources", [])
-        if sources:
-            def _chip(s):
-                cat   = s.get("category", "info")
-                score = s.get("score", "—")
-                title = s.get("title", "")
-                short = title[:42] + ("…" if len(title) > 42 else "")
-                return (f'<span class="src-chip {cat}" title="score:{score}">'
-                        f'{short}</span>')
-            chips = "".join(_chip(s) for s in sources[:5])
-            st.markdown(f'<div class="sources">📎 {chips}</div>',
-                        unsafe_allow_html=True)
+            # Download button (PDF or CSV)
+            if msg.get("action") in ("pdf","dict_csv") and st.session_state.dl_queue:
+                # Find the matching download
+                for dl in st.session_state.dl_queue[-3:]:
+                    lbl, data, mime, fname = dl
+                    st.download_button(
+                        label=lbl,
+                        data=data,
+                        file_name=fname,
+                        mime=mime,
+                        key=f"dl_{idx}_{fname}",
+                    )
 
-        btns = msg.get("btns", [])
-        if btns:
-            n  = min(len(btns), 4)
-            bc = st.columns(n)
-            for j, (lbl, q) in enumerate(btns):
-                with bc[j % n]:
-                    if st.button(lbl, key=f"b_{idx}_{j}"):
-                        st.session_state.pending = q
-                        st.rerun()
-
-
-# ─────────────────────────── Input ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# INPUT ROW
+# ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<hr style='margin:.2rem 0 0;border-color:#e9eef4'>", unsafe_allow_html=True)
-in_col, btn_col = st.columns([6, 1])
-with in_col:
-    ph = ("Ask about your data… e.g. 'max salary', 'show schema of orders', "
-          "'missing values in customers'"
-          if st.session_state.mode == "dynamic"
-          else "Ask about CDISC schemas, DQ issues, statistics, glossary…")
+
+in_c, btn_c = st.columns([6,1])
+with in_c:
+    ph = ("Ask anything… e.g. 'create dashboard', 'show ER diagram', "
+          "'generate PDF', 'what is max age?', 'explain lab_results table'")
     user_input = st.text_area(
         "Message",
         label_visibility="collapsed",
@@ -627,19 +660,22 @@ with in_col:
         height=66,
         key=f"inp_{st.session_state.input_key}",
     )
-with btn_col:
+with btn_c:
     st.markdown("<div class='send-wrap' style='padding-top:4px'>", unsafe_allow_html=True)
     send = st.button("Send ▶", key="send_btn", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 if send and user_input and user_input.strip():
-    submit(user_input)
-    st.rerun()
+    if not st.session_state.report:
+        st.warning("Please load data first — upload a file or use the Demo tab.")
+    else:
+        _submit(user_input)
+        st.rerun()
 
 st.markdown(
-    "<div style='text-align:center;font-size:.64rem;color:#cbd5e1;padding:.2rem 0 .4rem'>"
-    "BM25 retrieval · pandas profiling · No API key · "
-    "Free · GitHub + Streamlit Cloud ready"
+    "<div style='text-align:center;font-size:.63rem;color:#cbd5e1;padding:.18rem 0 .38rem'>"
+    "DataGenome AI · Cognizant BlueBolt · GenAI for Life Sciences · "
+    "BM25 RAG · Plotly · FPDF2 · No API key · Free · Streamlit Cloud ready"
     "</div>",
     unsafe_allow_html=True,
 )
